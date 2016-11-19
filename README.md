@@ -13,6 +13,9 @@ Now that I have a need to work on an ESP32 from Espressif, I want a way to
 develop interactively, using a feature set similar to XXL, K/Q, Kerf, etc. None
 of those systems target this platform.
 
+I am willing to sacrifice some power for good performance and small size. Even
+if it means weird trade-offs. 
+
 Style
 ---
 

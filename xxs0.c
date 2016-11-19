@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 
 #define DBG(msg) printf("%s\n",msg);
@@ -16,15 +17,17 @@ typedef uint32_t xlong;
 #define xtNULL 1
 #define xtCHAR 2
 #define xtINT 3
-#define xtUNARYF 4
-#define xtBINARYF 5
+#define xtLIST 4
+#define xtNULLF 20
+#define xtUNARYF 21
+#define xtBINARYF 22
 
 #define MAXNAMES 256
 #define NULLID 0
 typedef xbyte xid_t;    // an id is a pointer into the scopes names/types/len array - must be big enough to hold MAXNAMES
 typedef xlong xname_t; // we store names as hashes
 extern uint32_t crc32(uint32_t crc, const void *buf, size_t size);
-#define NAME_HASH(str,len) crc32(0,str,len)
+#define NAME_HASH(str,len) crc32(0,str,len==0?strlen(str):len)
 typedef xbyte xtype_t;  // types are presented as integers; how many do we need?
 typedef xword xlen_t;
 typedef xlong xpool_ptr_t;  // pointer into the pool. should be big enough to point anywhere in your buffer
@@ -35,6 +38,9 @@ typedef struct {
 	xpool_ptr_t ptr[MAXNAMES];  // where is the actual value? offsets into the pool buffer 
 	xid_t maxid;
 } xscope_t;
+#define WS(w) (w->scope)
+#define LEN(id,w) (WS(w).len[id])
+#define PTR(id,w) ((xbyte*)&w->pool.buf[w->scope.ptr[id]])
 // need to figure out the concept of a "free map"
 // maybe this:
 #define MAXFREEMAP 256
@@ -45,7 +51,6 @@ typedef struct {
 	xpool_ptr_t free_map[MAXFREEMAP];
 	size_t avail_size[MAXFREEMAP];
 } xpool_t;
-
 // when we allocate buf..
 //
 // so free map starts empty - i.e., totally free
@@ -78,11 +83,11 @@ void init_pool(xpool_t* p, xbyte* buf, size_t buf_sz) {
 	p->avail_size[0] = buf_sz;
 }
 
-xid_t set(char* name, size_t namelen, xtype_t valtype, xlen_t valsz, xbyte* value, xsys_t* world) {
+xid_t set(char* name, size_t namelen, xtype_t valtype, xbyte* value, xlen_t valsz, xsys_t* world) {
 	DBG("set");
-	int alloc_size = valsz < 4 ? 4 : valsz;
+	if (value != NULL && valsz == 0) valsz = strlen(value); // cstrings
+	int alloc_size = (valsz < 4 ? 4 : valsz), i;
 	// now we have to find free space using the freemap
-	int i;
 	size_t* avails = world->pool.avail_size;
 	xpool_ptr_t* freemap = world->pool.free_map;
 	xpool_ptr_t newptr = -1;
@@ -91,7 +96,6 @@ xid_t set(char* name, size_t namelen, xtype_t valtype, xlen_t valsz, xbyte* valu
 			newptr = freemap[i];
 			avails[i] -= alloc_size;
 			freemap[i] += alloc_size;
-			printf("%d %d",i,newptr);
 			break;
 		}
 	}
@@ -105,7 +109,10 @@ xid_t set(char* name, size_t namelen, xtype_t valtype, xlen_t valsz, xbyte* valu
 	scope->type[id] = valtype;
 	scope->len[id] = valsz;
 	scope->ptr[id] = newptr;
-	memcpy(&(world->pool.buf)+newptr, value, valsz);
+	xbyte* ptr=&world->pool.buf[newptr];
+	printf("set ptr %u vs %d\n", ptr, valsz);
+	if(value == NULL) memset(ptr,0,valsz);
+	else memcpy(ptr, value, valsz);
 	return id;
 }
 
@@ -118,10 +125,21 @@ xid_t get(char* name, size_t namelen, xsys_t* world) {
 	return NULLID;
 }
 
-xid_t interp(const char* code, size_t codelen) {
-	size_t i = 0;
-	while (i < codelen) {
-	}
+xbyte* ptr(const xid_t id, const xsys_t* world) {
+	// TODO blah blah immediate value-type'd id blah blah
+	return PTR(id, world);
+}
+
+xid_t interp(const char* code, size_t codelen, int start, xsys_t* world) {
+	// parse states
+	// 0 start
+	// 1 comment
+	// 2 quote
+	// 3 number
+	// 4 fractional part
+	// 5 identifier
+	xid_t states = set("states", 0, xtCHAR, "0cqnfi", 0, world); 
+	xid_t transitions = set("transitions", 0, xtINT, NULL, LEN(states,world)*('~'-' '), world);
 	return 0;
 }
 
@@ -135,14 +153,20 @@ int main(void) {
 	xsys_t world;
 	world.scope = scope;
 	world.pool = p;
-	set("null", 4, xtNULL, 0, "", &world);
-	set("self", 4, xtCHAR, 5, "hello", &world);
-	set("x", 1, xtCHAR, 5, "hello", &world);
+	set("null", 4, xtNULL, "(null)", 0, &world);
+	set("self", 4, xtCHAR, "hello", 5, &world);
+	set("x", 1, xtCHAR, "xxs", 0, &world);
 	xid_t id;
 	id = get("self", 4, &world);
 	printf("%d\n", id);
 	id = get("x", 1, &world);
 	printf("%d\n", id);
+	char* pp = ptr(id, &world);
+	printf("%u\n", pp);
+	printf("%s\n", (char*)ptr(id, &world));
 	return 0;
 }
+
+// IDEA: knit for ragged data structures (for n items, maintain a separate length index, pretty easy)
+// IDEA: apter trees
 
