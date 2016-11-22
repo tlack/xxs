@@ -1,4 +1,5 @@
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -69,11 +70,13 @@ void diaf(const char* msg) {
 }
 
 void init_scope(xscope_t* s) {
+	assert(s!=NULL);
 	DBG("is");
 	memset(s, 0, sizeof(xscope_t));
 }
 
 void init_pool(xpool_t* p, xbyte* buf, size_t buf_sz) {
+	assert(p!=NULL && buf!=NULL && buf_sz > 0);
 	DBG("ip");
 	memset(p, 0, sizeof(xpool_t));
 	p->buf = buf;
@@ -83,9 +86,14 @@ void init_pool(xpool_t* p, xbyte* buf, size_t buf_sz) {
 	p->avail_size[0] = buf_sz;
 }
 
+void emit(const char* lbl, xid_t obj) {
+	printf("%s, xid=%d\n", lbl, obj);
+}
+
 xid_t set(char* name, size_t namelen, xtype_t valtype, xbyte* value, xlen_t valsz, xsys_t* world) {
 	DBG("set");
 	if (value != NULL && valsz == 0) valsz = strlen(value); // cstrings
+	assert(valsz>0);
 	int alloc_size = (valsz < 4 ? 4 : valsz), i;
 	// now we have to find free space using the freemap
 	size_t* avails = world->pool.avail_size;
@@ -118,6 +126,7 @@ xid_t set(char* name, size_t namelen, xtype_t valtype, xbyte* value, xlen_t vals
 
 xid_t get(char* name, size_t namelen, xsys_t* world) {
 	// return the id if its in NAMES
+	assert(name!=NULL && namelen>0 && world!=NULL);
 	DBG("get"); DBG(name);
 	xname_t nh = NAME_HASH(name, namelen);
 	xname_t* n = world->scope.name;
@@ -127,10 +136,13 @@ xid_t get(char* name, size_t namelen, xsys_t* world) {
 
 xbyte* ptr(const xid_t id, const xsys_t* world) {
 	// TODO blah blah immediate value-type'd id blah blah
+	assert(id>0 && world!=NULL);
 	return PTR(id, world);
 }
 
 xid_t interp(const char* code, size_t codelen, int start, xsys_t* world) {
+	if(codelen==0) codelen=strlen(code);
+	assert(code!=NULL && start>=0 && codelen>=0 && world!=NULL && start<codelen);
 	// parse states
 	// 0 start
 	// 1 comment
@@ -139,7 +151,16 @@ xid_t interp(const char* code, size_t codelen, int start, xsys_t* world) {
 	// 4 fractional part
 	// 5 identifier
 	xid_t states = set("states", 0, xtCHAR, "0cqnfi", 0, world); 
-	xid_t transitions = set("transitions", 0, xtINT, NULL, LEN(states,world)*('~'-' '), world);
+	int nstates = LEN(states,world);
+	char startch = ' ';
+	char endch = '~';
+	xid_t transitions = set("transitions", 0, xtINT, NULL, nstates*(endch-startch), world);
+	char curst = '0';
+	char* ptr = code+start;
+	while (ptr < code+codelen) {
+		printf("%c %p\n", curst, ptr);
+		ptr++;
+	}
 	return 0;
 }
 
@@ -164,6 +185,8 @@ int main(void) {
 	char* pp = ptr(id, &world);
 	printf("%u\n", pp);
 	printf("%s\n", (char*)ptr(id, &world));
+	xid_t res = interp("self", 0, 0, &world); 
+	emit("interp", res);
 	return 0;
 }
 
